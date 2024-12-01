@@ -4,7 +4,6 @@
 
 #define BUCKET_AMOUNT 255
 
-
 int getLines(FILE* file) {
 	char ch;
 	int linesCount = 0;
