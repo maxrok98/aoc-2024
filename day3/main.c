@@ -30,6 +30,8 @@ typedef enum TokenType {
 	INTEGER,
 	COMMA,
 	MUL,
+	DO,
+	DONT,
 	GARBAGE,
 	END
 } TokenType;
@@ -81,6 +83,22 @@ Token nextToken(Tokenizer* tokenizer) {
 				break;
 			}
 		}
+		if(tokenizer->string[tokenizer->start] == 'd' && tokenizer->start < tokenizer->length-1 ) { 
+			if(tokenizer->string[tokenizer->start+1] == 'o') {
+
+				if(tokenizer->string[tokenizer->start+2] == 'n' && tokenizer->start < tokenizer->length-4) {
+					if(tokenizer->string[tokenizer->start+3] == '\'' && tokenizer->string[tokenizer->start+4] == 't') {
+						token = (Token) { .tokenType = DONT };
+						tokenizer->end += 4;
+						break;
+					}
+				}
+				
+				token = (Token) { .tokenType = DO };
+				tokenizer->end += 1;
+				break;
+			}
+		}
 		token = (Token) { .tokenType = GARBAGE }; break;
 	}
 	AdvanceCursor(tokenizer);
@@ -113,5 +131,40 @@ int main() {
 	}
 
 	printf("Part 1: %d\n", sum);
+
+	tokenizer = (Tokenizer) {
+		.string = fileContent,
+		.length = length,
+		.start = 0,
+		.end = 0
+	};
+
+	int sum2 = 0;
+	bool Do = true;
+	token;
+	while((token = nextToken(&tokenizer)).tokenType != END) {
+		if(token.tokenType == MUL) {
+			Token num1;
+			Token num2;
+			if(nextToken(&tokenizer).tokenType != L_PAREN) continue;
+			if((num1 = nextToken(&tokenizer)).tokenType != INTEGER) continue;
+			if(nextToken(&tokenizer).tokenType != COMMA) continue;
+			if((num2 = nextToken(&tokenizer)).tokenType != INTEGER) continue;
+			if(nextToken(&tokenizer).tokenType != R_PAREN) continue;
+			if(Do) sum2 += num1.value * num2.value;
+		}
+		else if(token.tokenType == DO) {
+			if(nextToken(&tokenizer).tokenType != L_PAREN) continue;
+			if(nextToken(&tokenizer).tokenType != R_PAREN) continue;
+			Do = true;
+		}
+		else if(token.tokenType == DONT) {
+			if(nextToken(&tokenizer).tokenType != L_PAREN) continue;
+			if(nextToken(&tokenizer).tokenType != R_PAREN) continue;
+			Do = false;
+		}
+	}
+
+	printf("Part 2: %d\n", sum2);
 	return 0;
 }
