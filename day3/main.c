@@ -52,26 +52,6 @@ void AdvanceCursor(Tokenizer* tokenizer) {
 	tokenizer->start = ++tokenizer->end;
 }
 
-void SetCursor(Tokenizer* tokenizer, int num) {
-	tokenizer->start = tokenizer->end = num;
-}
-
-Token nextMulToken(Tokenizer* tokenizer) {
-	assert(tokenizer->start == tokenizer->end);
-	Token token;
-	while(true) {
-		while(tokenizer->string[tokenizer->start] != 'm' && tokenizer->start < tokenizer->length) {
-			AdvanceCursor(tokenizer);
-		}
-		if(tokenizer->start >= tokenizer->length-2) break;
-		if(tokenizer->string[tokenizer->end+1] != 'u') { AdvanceCursor(tokenizer); continue; }
-		if(tokenizer->string[tokenizer->end+2] != 'l') { AdvanceCursor(tokenizer); continue; }
-		SetCursor(tokenizer, tokenizer->end+3);
-		return token = (Token) { .tokenType = MUL };
-	}
-	return token = (Token) { .tokenType = END };
-}
-
 int ToInteger(char* string, int start, int end) {
 	int num = 0;
 	for(int i = start; i <= end; i++) {
@@ -94,6 +74,13 @@ Token nextToken(Tokenizer* tokenizer) {
 			int num = ToInteger(tokenizer->string, tokenizer->start, tokenizer->end);
 			token = (Token) { .tokenType = INTEGER, .value = num }; break;
 		}
+		if(tokenizer->string[tokenizer->start] == 'm' && tokenizer->start < tokenizer->length-2 ) { 
+			if(tokenizer->string[tokenizer->start+1] == 'u' && tokenizer->string[tokenizer->start+2] == 'l') {
+				token = (Token) { .tokenType = MUL };
+				tokenizer->end += 2;
+				break;
+			}
+		}
 		token = (Token) { .tokenType = GARBAGE }; break;
 	}
 	AdvanceCursor(tokenizer);
@@ -112,9 +99,11 @@ int main() {
 	};
 
 	int sum = 0;
-	while(nextMulToken(&tokenizer).tokenType != END) {
+	Token token;
+	while((token = nextToken(&tokenizer)).tokenType != END) {
 		Token num1;
 		Token num2;
+		if(token.tokenType != MUL) continue;
 		if(nextToken(&tokenizer).tokenType != L_PAREN) continue;
 		if((num1 = nextToken(&tokenizer)).tokenType != INTEGER) continue;
 		if(nextToken(&tokenizer).tokenType != COMMA) continue;
