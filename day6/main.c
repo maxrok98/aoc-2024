@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <unistd.h>
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
 
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
@@ -17,25 +19,6 @@ typedef struct {
 	int i;
 	int j;
 } Point;
-
-typedef struct {
-	Point* points;
-	int count;
-	int allocated;
-} PointArray;
-
-void InitArray(PointArray* array) {
-	array->count = 0;
-	array->allocated = ARRAY_LENGTH;
-	array->points = (Point*)calloc(ARRAY_LENGTH, sizeof(Point));
-}
-
-void AddPoint(PointArray* array, Point point) {
-	if(array->count == array->allocated) {
-		array->points = (Point*)realloc(array->points, sizeof(Point)*(array->allocated*=2));
-	}
-	array->points[array->count++] = point;
-}
 
 typedef enum {
 	UP,
@@ -51,7 +34,6 @@ typedef struct state {
 
 	int stepedPositions;
 	int possibleLoops;
-	PointArray turnPositions;
 
 	bool endGame;
 } State;
@@ -82,9 +64,7 @@ void ParseFile(char* fileName, State* state) {
 void DrawMap(State* state) {
 	for(int i = 0; i < HEIGHT; i++) {
 		for(int j = 0; j < WIDTH; j++) {
-			if(state->map[i][j] == '#') printf("\u2588\u2588");
-			else if(state->map[i][j] == 'X') printf(ANSI_COLOR_YELLOW "\u2588\u2588" ANSI_COLOR_RESET);
-			else if(state->point.i == i && state->point.j == j) {
+			if(state->point.i == i && state->point.j == j) {
 				printf(ANSI_COLOR_GREEN);
 				switch(state->direction) {
 					case UP:
@@ -102,6 +82,8 @@ void DrawMap(State* state) {
 				}				
 				printf(ANSI_COLOR_RESET);
 			}
+			else if(state->map[i][j] == '#') printf("\u2588\u2588");
+			else if(state->map[i][j] == 'X') printf(ANSI_COLOR_YELLOW "\u2588\u2588" ANSI_COLOR_RESET);
 			else printf("  ");
 		}
 		printf("\n");
@@ -120,41 +102,7 @@ void MarkPlace(State* state) {
 	}
 }
 
-int Max(int a, int b) {
-	return a >= b ? a : b;
-}
-
-int Min(int a, int b) {
-	return a < b ? a : b;
-}
-
-bool FreeWay(State* state, Point p1, Point p2) {
-	assert((p1.i == p2.i) || (p1.j == p2.j));
-	if(p1.i == p2.i) {
-		int i = p1.i;
-		for(int j = Min(p1.j, p2.j); j < Max(p1.j, p2.j); j++) {
-			if(state->map[i][j] == '#') return false;
-		}
-	}
-	else if(p1.j == p2.j) {
-		int j = p1.j;
-		for(int i = Min(p1.i, p2.i); i < Max(p1.i, p2.i); i++) {
-			if(state->map[i][j] == '#') return false;
-		}
-	}
-	return true;
-}
-
-void CheckPossibleLoop(State* state) {
-	if(state->turnPositions.count < 3) return;
-	PointArray turnHistory = state->turnPositions;
-	if(((state->direction == UP || state->direction == DOWN) && state->point.i == turnHistory.points[turnHistory.count-3].i) ||
-		 ((state->direction == RIGHT || state->direction == LEFT) && state->point.j == turnHistory.points[turnHistory.count-3].j)) {
-		if(FreeWay(state, state->point, turnHistory.points[turnHistory.count-3])) state->possibleLoops++;
-	}
-}
-
-void AdvanceState(State* state) {
+void AdvanceState(State* state, bool loopCheck) {
 	int valid_top = (state->point.i != 0), valid_bottom = (state->point.i != HEIGHT-1);
 	int valid_left = (state->point.j != 0), valid_right = (state->point.j != WIDTH-1); 
 
@@ -163,46 +111,92 @@ void AdvanceState(State* state) {
 		 (!valid_bottom && state->direction == DOWN) ||
 		 (!valid_left && state->direction == LEFT)
 	) {
-		MarkPlace(state);
+		if(!loopCheck) MarkPlace(state);
 		state->endGame = true;
 		return;
 	}
 
-	CheckPossibleLoop(state);
-
 	if(state->direction == UP && state->map[state->point.i-1][state->point.j] != '#') {
-		MarkPlace(state);
+		if(!loopCheck) MarkPlace(state);
 		state->point.i--;
 	}
 	else if(state->direction == RIGHT && state->map[state->point.i][state->point.j+1] != '#') {
-		MarkPlace(state);
+		if(!loopCheck) MarkPlace(state);
 		state->point.j++;
 	}
 	else if(state->direction == DOWN && state->map[state->point.i+1][state->point.j] != '#') {
-		MarkPlace(state);
+		if(!loopCheck) MarkPlace(state);
 		state->point.i++;
 	}
 	else if(state->direction == LEFT && state->map[state->point.i][state->point.j-1] != '#') {
-		MarkPlace(state);
+		if(!loopCheck) MarkPlace(state);
 		state->point.j--;
 	}
 	else { // hit the wall
 		UpdateDirection(state);
-		AddPoint(&state->turnPositions, state->point);
+		AdvanceState(state, loopCheck);
 	}
+}
+
+bool CheckPossibleLoop(State* state, int* wi, int* wj) {
+	bool loop = false;
+
+	typedef struct {
+		Point point;
+		Direction direction;
+	} Position;
+
+	struct { Position key; int value; }* hash = NULL;
+	while(true) {
+		if(state->endGame) { loop = false; break; }
+
+		Position p = {
+			.point = {
+				.i = state->point.i,
+				.j = state->point.j,
+			},
+			.direction = state->direction
+		};
+		if(hmget(hash, p)) { loop = true; break; }
+		hmput(hash, p, 1);
+
+		AdvanceState(state, true);
+	}
+
+	hmfree(hash);
+	return loop;
 }
 
 int main() {
 	State state = {0};
-	InitArray(&state.turnPositions);
 
 	ParseFile("input.txt", &state);
+	Point startingPoint = state.point;
+	Direction startingDirection = state.direction;
 
 	while(!state.endGame) {
-		AdvanceState(&state);
+		AdvanceState(&state, false);
 
 		//DrawMap(&state);
-		//usleep(25000);
+		//usleep(12000);
+	}
+
+	//state.point = startingPoint;
+	for(int i = 0; i < HEIGHT; i++) {
+		for(int j = 0; j < WIDTH; j++) {
+			if(i == startingPoint.i && j == startingPoint.j) continue;
+			if(state.map[i][j] == 'X') {
+				state.map[i][j] = '#';
+				int wi, wj;
+				state.point = startingPoint;
+				state.direction = startingDirection;
+				state.endGame = false;
+				if(CheckPossibleLoop(&state, &wi, &wj)) {
+					state.possibleLoops++;
+				}
+				state.map[i][j] = 'X';
+			}
+		}
 	}
 
 	printf("Part 1: %d\n", state.stepedPositions);
