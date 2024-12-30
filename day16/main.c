@@ -3,10 +3,22 @@
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
+#define WIDTH 141
+#define HEIGHT 141
+#define VISITED 0
+#define SPACE -1
+#define WALL -2
+#define MARK -3
+
+int map[HEIGHT][WIDTH] = {0};
+
 typedef struct {
 	int i;
 	int j;
 } Point;
+
+Point start;
+Point end;
 
 typedef enum {
 	UP,
@@ -71,30 +83,162 @@ Position* QAdd(Position* p, Position p1) {
 	}
 	return p;
 }
+// --------------------
 
-void printfArr(Position* p) {
-	for(int i = 0; i < arrlen(p); i++) {
-		printf("%d ", p[i].value);
+void ParseFile(char* fileName) {
+	FILE* f = fopen(fileName, "rb");
+	if(f == NULL) {
+		printf("Error: %s file not found!\n", fileName);
+		exit(1);
 	}
-	printf("\n");
+
+	char* line = NULL;
+	size_t lineLen;
+	for (int i = 0; i < HEIGHT; i++) {
+ 		getline(&line, &lineLen, f);
+		for(int j = 0; j < WIDTH; j++) {
+			if(line[j] == 'S') {
+				start.i = i;
+				start.j = j;
+				map[i][j] = SPACE;
+			}
+			else if(line[j] == 'E') {
+				end.i = i;
+				end.j = j;
+				map[i][j] = SPACE;
+			}
+			else if(line[j] == '.') {
+				map[i][j] = SPACE;
+			}
+			else if(line[j] == '#') {
+				map[i][j] = WALL;
+			}
+		}
+	}
+	free(line);
+	fclose(f);
+}
+
+Position NewPosition(Point p, Direction d, int value) {
+	Position np = { .p = p, .d = d, .value = value };
+	map[p.i][p.j] = VISITED;
+	return np;
+}
+
+Point GetNextPoint(Point p, Direction d) {
+	Point np = p;
+	switch(d) {
+		case UP: np.i--; break;
+		case RIGHT: np.j++; break;
+		case DOWN: np.i++; break;
+		case LEFT: np.j--; break;
+	}
+	return np;
+}
+
+typedef struct {
+	Point key;
+	Position* positions;
+	Position* source; //array of source position
+} PositionDict;
+PositionDict* positions = NULL;
+
+Position  GetChipestPosition(Position* p) {
+	Position pc = p[0];
+	for(int i = 1; i < arrlen(p); i++) {
+		if(pc.value > p[i].value) pc = p[i];
+	}
+	return pc;
+}
+
+void Dijkstra() {
+	Position* q = NULL;
+	
+	Position p = NewPosition(start, RIGHT, 0);
+	q = QAdd(q, p);
+	while(!QEmpty(q)) {
+		p = QPoll(q);
+
+		for(int d = 0; d <= LEFT; d++) {
+			Point np = GetNextPoint(p.p, d);
+			if(map[np.i][np.j] == SPACE) {
+				Position position;
+				if(d != p.d) position = NewPosition(p.p, d, p.value+1000);
+				else position = NewPosition(np, d, p.value+1);
+
+				Position* possible = hmgets(positions, position.p).positions;
+				Position* source = hmgets(positions, position.p).source;
+				arrput(possible, position);
+				if(d == p.d) arrput(source, p);
+				PositionDict pd = { .key = position.p, .positions = possible, .source = source };
+				hmputs(positions, pd);
+
+				q = QAdd(q, position); // rewrite queue reference
+			}
+			else if(map[np.i][np.j] >= 0) { // if space already visited
+				// check if there is position on that point which is one step biger, if so link them
+				Position* possible = hmgets(positions, np).positions;
+				Position* source = hmgets(positions, np).source;
+				if(possible) {
+					for(int i = 0; i < arrlen(possible); i++) {
+						if(possible[i].value - p.value == 1 && possible[i].d == p.d) {
+							arrput(source, p);
+							PositionDict pd = { .key = np, .positions = possible, .source = source };
+							hmputs(positions, pd);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+PositionDict* shortestPath = NULL;
+void MarkShortestPath() {
+	Position* q = NULL;
+	Position p = GetChipestPosition(hmgets(positions, end).positions);
+	q = QAdd(q, p);
+	PositionDict pd = { .key = end, .positions = 1, .source = 1 };
+	hmputs(shortestPath, pd);
+
+	while(!QEmpty(q)) {
+		p = QPoll(q);
+
+		pd = (PositionDict) { .key = p.p, .positions = 1, .source = 1 };
+		hmputs(shortestPath, pd);
+		Position* source = hmgets(positions, p.p).source;
+		for(int i = 0; i < arrlen(source); i++) {
+			q = QAdd(q, source[i]);
+		}
+	}
 }
 
 int main() {
-	Position* a = NULL;
-	Position p = {0};
-	p.value = 10;
-	arrput(a, p);
-	p.value = 15;
-	arrput(a, p);
-	p.value = 20;
-	arrput(a, p);
-	p.value = 17;
-	arrput(a, p);
-
-	p.value = 8;
-	printfArr(a);
-	a = QAdd(a, p);
-	printfArr(a);
+	ParseFile("input.txt");
+	Dijkstra();
+	printf("Part 1: %d\n", GetChipestPosition(hmgets(positions, end).positions).value);
+	//for(int i = 0; i < HEIGHT; i++) {
+	//	for(int j = 0; j < WIDTH; j++) {
+	//		Point p = { .i = i, .j = j };
+	//		Position* pos = hmgets(positions, p).positions;
+	//		if(map[i][j] == WALL) printf("#### ");
+	//		else if (pos) {
+	//			printf("%d ", GetChipestPosition(pos).value);
+	//		}
+	//	}
+	//	printf("\n");
+	//}
 	
+	MarkShortestPath();
+	printf("Part 2: %ld\n", hmlen(shortestPath));
+	//for(int i = 0; i < HEIGHT; i++) {
+	//	for(int j = 0; j < WIDTH; j++) {
+	//		Point p = { .i = i, .j = j };
+	//		if(map[i][j] == WALL) printf("#");
+	//		else if(hmgets(shortestPath, p).positions) printf("O");
+	//		else printf(".");
+	//	}
+	//	printf("\n");
+	//}
 	return 0;
 }
